@@ -1,51 +1,85 @@
 'use strict';
 
 require('dotenv').config();
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT;
 const express = require('express');
 const cors = require('cors');
-const weather = require('./data/weather.json');
+const axios = require('axios');
 const app = express();
 app.use(cors());
 
 class WeatherData {
   constructor(obj) {
-    this.city_name = obj.city_name;
     this.dateTime = obj.datetime;
-    this.highTemp = obj.data.high_temp;
-    this.lowTemp = obj.data.low_temp;
-    this.currentTemp = obj.data.temp;
+    this.highTemp = obj.max_temp;
+    this.lowTemp = obj.low_temp;
+    this.currentTemp = obj.temp;
     this.weather = {
       description: obj.weather.description,
-      icon: obj.weather.icon,
-      code: obj.weather.code
+      icon: obj.weather.icon
     };
   }
 }
 
+class MovieData {
+  constructor(obj) {
+    this.title = obj.title;
+    this.description = obj.overview;
+    this.avg_likes = obj.average_votes;
+    this.total_likes = obj.total_votes;
+    this.image = obj.image_url;
+    this.popularity = obj.popularity;
+    this.released = obj.release_date;
 
-app.get('/', (request, response) => {
-  response.status(200).send('Hey you got it working');
+  }
+}
+
+async function getWeatherData(req, res, next) {
+  try {
+    const { lat, lon, city } = req.query;
+
+    const url = `http://api.weatherbit.io/v2.0/forecast/daily?key=${process.env.WEATHERBIT_API}&city=${city}&lat=${lat}&lon=${lon}&days=7&unit=I`;
+    const weather = await axios.get(url);
+
+    const formattedData = weather.data.data.map(n => new WeatherData(n));
+    res.status(200).send(formattedData);
+  }
+  catch (error) {
+    // res.status(500).send(error.message);
+    next(error);
+  }
+}
+
+async function getMovieData(req, res, next) {
+  try {
+    const {city} = req.query;
+    const url = `https://api.themoviedb.org/3/search/movie?api_key=${process.env.MOVIE_API}&query=${city}&append_to_response=videos,images`;
+
+    const movies = await axios.get(url);
+    const formattedData = movies.data.results.map(n => new MovieData(n));
+
+    res.status(200).send(formattedData);
+  } catch(error) {
+    // res.status(500).send(error.message);
+    next(error);
+  }
+}
+
+
+app.get('/weather', getWeatherData);
+
+app.get('/movies', getMovieData);
+
+app.get('/', (req,res) => {
+  res.status(200).send('Hey you got it working');
 });
 
+app.get('*', (req,res) => {
+  res.status(400).send('Oh no! Something went wrong.');
+});
 
-app.get('/weather', (request, response) => {
-  const lat = parseFloat(request.query.lat);
-  const lon = parseFloat(request.query.lon);
-
-  try { 
-    if (isNaN(lat) || isNaN(lon) || lat < -90 || lat > 90 || lon < -180 || lon > 180) {
-      throw new Error('Invalid lat and/or lon value');
-    }
-    const queryData = lat && lon ? weather.filter(v => v.lon === lon && v.lat === lat).map(v => new WeatherData(v) ) : null;
-    if (!queryData) {
-      throw new Error('No weather data found for the specified latitude and longitude');
-    } response.status(200).send(queryData);
-  }
-  catch(error){
-    console.error(error);
-    response.status(500).send(error.message);
-  }
+app.use((error,req,res) => {
+  res.status(500).send(error.message);
 });
 
 app.listen(PORT, () => console.log(`listening on ${PORT}`));
